@@ -1,3 +1,4 @@
+// A simple multiplexing protocol.
 package frames
 
 import (
