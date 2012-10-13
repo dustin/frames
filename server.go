@@ -281,7 +281,11 @@ func (ll *listenerListener) listen(l net.Listener) {
 		c, err := l.Accept()
 		if err != nil {
 			ll.err = err
-			close(ll.ch)
+			if ll.ch != nil {
+				close(ll.ch)
+				ll.ch = nil
+				return
+			}
 		}
 		go ll.listenListen(c)
 	}
