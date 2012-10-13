@@ -95,6 +95,10 @@ func (fc *frameClient) writeRequests() {
 	for {
 		e := <-fc.egress
 		_, err := fc.c.Write(e.Bytes())
+		// Clean up on close
+		if e.Cmd == FrameClose {
+			delete(fc.channels, e.Channel)
+		}
 		if err != nil {
 			panic(err)
 		}
