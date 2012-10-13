@@ -46,6 +46,7 @@ func (fc *frameClient) handleOpened(pkt *FramePacket) {
 		pkt.Channel,
 		make(chan []byte, 8192),
 		nil,
+		false,
 	}
 	opening <- queueResult{fc.channels[pkt.Channel], nil}
 }
@@ -144,27 +145,28 @@ type clientChannel struct {
 	channel  uint16
 	incoming chan []byte
 	current  []byte
+	closed   bool
 }
 
 func (f *clientChannel) Read(b []byte) (n int, err error) {
-	if f.incoming == nil {
+	if f.closed {
 		return 0, io.EOF
 	}
 	read := 0
 	for len(b) > 0 {
 		if f.current == nil || len(f.current) == 0 {
+			var ok bool
 			if read == 0 {
-				f.current = <-f.incoming
+				f.current, ok = <-f.incoming
 			} else {
-				var ok bool
 				select {
 				case f.current, ok = <-f.incoming:
-					if !ok {
-						return read, io.EOF
-					}
 				default:
 					return read, nil
 				}
+			}
+			if !ok {
+				return read, io.EOF
 			}
 		}
 		copied := copy(b, f.current)
@@ -176,7 +178,7 @@ func (f *clientChannel) Read(b []byte) (n int, err error) {
 }
 
 func (f *clientChannel) Write(b []byte) (n int, err error) {
-	if f.incoming == nil {
+	if f.closed {
 		return 0, io.EOF
 	}
 
@@ -201,8 +203,10 @@ func (f *clientChannel) Close() error {
 }
 
 func (f *clientChannel) terminate() {
-	close(f.incoming)
-	f.incoming = nil
+	if !f.closed {
+		close(f.incoming)
+		f.closed = true
+	}
 }
 
 type frameAddr struct {

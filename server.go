@@ -111,7 +111,9 @@ func (f *frameConnection) readLoop() {
 		hdr := make([]byte, minPktLen)
 		_, err := io.ReadFull(f.c, hdr)
 		if err != nil {
-			log.Printf("Channel read error: %v", err)
+			if err != io.EOF {
+				log.Printf("Channel read error: %v", err)
+			}
 			f.Close()
 			return
 		}
