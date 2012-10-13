@@ -93,12 +93,10 @@ func (fc *frameClient) readResponses() {
 
 func (fc *frameClient) writeRequests() {
 	for {
-		select {
-		case e := <-fc.egress:
-			_, err := fc.c.Write(e.Bytes())
-			if err != nil {
-				panic(err)
-			}
+		e := <-fc.egress
+		_, err := fc.c.Write(e.Bytes())
+		if err != nil {
+			panic(err)
 		}
 	}
 }

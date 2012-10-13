@@ -9,38 +9,45 @@ import (
 	"time"
 )
 
+// Error returned when we've run out of channels.
+var ChannelsExhausted = errors.New("channels exhausted")
+
 func (f *frameConnection) connHandler() {
 	defer f.c.Close()
 	go f.readLoop()
 	f.writeLoop()
 }
 
+type newconn struct {
+	c net.Conn
+	e error
+}
+
 type frameConnection struct {
 	c net.Conn
 
 	channels map[uint16]*frameChannel
-	nextId   uint16
 
-	incoming chan net.Conn
-	cherr    chan error
+	newConns chan newconn
 
 	egress chan *FramePacket
 }
 
-func (f *frameConnection) Accept() (net.Conn, error) {
-	select {
-	case err, ok := <-f.cherr:
-		if !ok {
-			return nil, io.EOF
+func (f *frameConnection) nextId() (uint16, error) {
+	for i := uint16(0); i < uint16(0xffff); i++ {
+		if _, taken := f.channels[i]; !taken {
+			return i, nil
 		}
-		return nil, err
-	case c, ok := <-f.incoming:
-		if !ok {
-			return nil, io.EOF
-		}
-		return c, nil
 	}
-	panic("unreachable")
+	return 0, ChannelsExhausted
+}
+
+func (f *frameConnection) Accept() (net.Conn, error) {
+	c, ok := <-f.newConns
+	if !ok {
+		return nil, io.EOF
+	}
+	return c.c, c.e
 }
 
 func (f *frameConnection) Close() error {
@@ -48,8 +55,7 @@ func (f *frameConnection) Close() error {
 		c.Close()
 	}
 	close(f.egress)
-	close(f.cherr)
-	close(f.incoming)
+	close(f.newConns)
 	return nil
 }
 
@@ -58,20 +64,27 @@ func (f *frameConnection) Addr() net.Addr {
 }
 
 func (f *frameConnection) openChannel(pkt *FramePacket) {
-	f.nextId++
+	chid, err := f.nextId()
 	response := &FramePacket{
 		Cmd:     pkt.Cmd,
 		Status:  FrameSuccess,
-		Channel: f.nextId,
+		Channel: chid,
+	}
+	nc := newconn{}
+	if err == nil {
+		f.channels[chid] = &frameChannel{
+			conn:     f,
+			channel:  chid,
+			incoming: make(chan []byte, 1024),
+			current:  nil,
+		}
+		nc.c = f.channels[chid]
+	} else {
+		response.Status = FrameError
+		nc.e = err
 	}
 	f.egress <- response
-	f.channels[f.nextId] = &frameChannel{
-		conn:     f,
-		channel:  f.nextId,
-		incoming: make(chan []byte, 1024),
-		current:  nil,
-	}
-	f.incoming <- f.channels[f.nextId]
+	f.newConns <- nc
 }
 
 func (f *frameConnection) closeChannel(pkt *FramePacket) {
@@ -125,18 +138,16 @@ func (f *frameConnection) readLoop() {
 
 func (f *frameConnection) writeLoop() {
 	for {
-		select {
-		case e, ok := <-f.egress:
-			if !ok {
-				return
-			}
-			_, err := f.c.Write(e.Bytes())
-			if err != nil {
-				log.Printf("Error writing: %v", err)
-				// Close the underlying writer and let
-				// read clean up.
-				f.c.Close()
-			}
+		e, ok := <-f.egress
+		if !ok {
+			return
+		}
+		_, err := f.c.Write(e.Bytes())
+		if err != nil {
+			log.Printf("Error writing: %v", err)
+			// Close the underlying writer and let
+			// read clean up.
+			f.c.Close()
 		}
 	}
 }
@@ -147,8 +158,7 @@ func Listen(underlying net.Conn) (net.Listener, error) {
 	fc := frameConnection{
 		c:        underlying,
 		channels: map[uint16]*frameChannel{},
-		incoming: make(chan net.Conn),
-		cherr:    make(chan error),
+		newConns: make(chan newconn),
 		egress:   make(chan *FramePacket, 4096),
 	}
 	go fc.connHandler()

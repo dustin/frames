@@ -19,6 +19,7 @@ type FrameStatus uint8
 
 const (
 	FrameSuccess = FrameStatus(iota)
+	FrameError
 )
 
 const minPktLen = 6
@@ -101,6 +102,8 @@ func (c FrameStatus) String() string {
 	switch c {
 	case FrameSuccess:
 		return "Success"
+	case FrameError:
+		return "Error"
 	}
 	return fmt.Sprintf("{FrameStatus 0x%x}", int(c))
 }
