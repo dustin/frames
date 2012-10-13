@@ -24,20 +24,20 @@ type newconn struct {
 }
 
 type frameConnection struct {
-	c net.Conn
-
+	c        net.Conn
 	channels map[uint16]*frameChannel
-
 	newConns chan newconn
-
-	egress chan *FramePacket
+	egress   chan *FramePacket
+	lastChid uint16
 }
 
 func (f *frameConnection) nextId() (uint16, error) {
-	for i := uint16(0); i < uint16(0xffff); i++ {
-		if _, taken := f.channels[i]; !taken {
-			return i, nil
+	f.lastChid++
+	for i := 0; i < 0xffff; i++ {
+		if _, taken := f.channels[f.lastChid]; !taken {
+			return f.lastChid, nil
 		}
+		f.lastChid++
 	}
 	return 0, ChannelsExhausted
 }

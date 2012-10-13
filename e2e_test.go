@@ -19,6 +19,7 @@ type testService struct {
 }
 
 func runTestServer(t *testing.T) *testService {
+	t.Parallel()
 	ta, err := net.ResolveTCPAddr("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("Error resolving test server addr: %v", err)
@@ -72,9 +73,9 @@ func runTestServer(t *testing.T) *testService {
 }
 
 func TestEndToEnd(t *testing.T) {
-	time.AfterFunc(time.Millisecond*250, func() {
+	defer time.AfterFunc(time.Millisecond*250, func() {
 		panic("Taking too long")
-	})
+	}).Stop()
 	tc := runTestServer(t)
 	defer tc.l.Close()
 
@@ -121,5 +122,56 @@ func TestEndToEnd(t *testing.T) {
 	}
 	if tc.msgs != 25 {
 		t.Fatalf("Expected 25 channels, only saw %v", tc.msgs)
+	}
+}
+
+func TestChannelExhaustion(t *testing.T) {
+	t.Parallel()
+	fc := frameConnection{
+		channels: map[uint16]*frameChannel{},
+		egress:   make(chan *FramePacket),
+		newConns: make(chan newconn),
+	}
+
+	errs := int32(0)
+	pkterrs := int32(0)
+
+	wg := sync.WaitGroup{}
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		for r := range fc.egress {
+			if r.Status != FrameSuccess {
+				t.Logf("Packet error: %v", r.Status)
+				atomic.AddInt32(&pkterrs, 1)
+			}
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		for nc := range fc.newConns {
+			if nc.e != nil {
+				t.Logf("conn err: %v", nc.e)
+				atomic.AddInt32(&errs, 1)
+			}
+		}
+	}()
+
+	p := &FramePacket{Cmd: FrameOpen}
+	for i := 0; i <= 0xffff+2; i++ {
+		fc.openChannel(p)
+	}
+
+	close(fc.egress)
+	close(fc.newConns)
+	wg.Wait()
+
+	if errs != 2 {
+		t.Fatalf("Expected two errors, got %v", errs)
+	}
+	if pkterrs != 2 {
+		t.Fatalf("Expected two packet errors, got %v", pkterrs)
 	}
 }
