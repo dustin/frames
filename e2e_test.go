@@ -73,7 +73,7 @@ func runTestServer(t *testing.T) *testService {
 }
 
 func TestEndToEnd(t *testing.T) {
-	defer time.AfterFunc(time.Millisecond*250, func() {
+	defer time.AfterFunc(time.Second*5, func() {
 		panic("Taking too long")
 	}).Stop()
 	tc := runTestServer(t)
