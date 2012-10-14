@@ -80,6 +80,8 @@ func (f *frameConnection) openChannel(pkt *FramePacket) {
 			current:  nil,
 		}
 		nc.c = f.channels[chid]
+		log.Printf("Opened channel on %v %v -> %v",
+			f.c.RemoteAddr(), pkt, chid)
 	} else {
 		response.Status = FrameError
 		nc.e = err
@@ -91,9 +93,11 @@ func (f *frameConnection) openChannel(pkt *FramePacket) {
 func (f *frameConnection) closeChannel(pkt *FramePacket) {
 	ch := f.channels[pkt.Channel]
 	if ch == nil {
-		log.Printf("Closing a closed channel: %v", ch)
+		log.Printf("Closing a closed channel: %v", pkt)
 		return
 	}
+	log.Printf("Closing channel on %v %v",
+		f.c.RemoteAddr(), pkt)
 	ch.Close()
 	delete(f.channels, pkt.Channel)
 }
@@ -101,7 +105,9 @@ func (f *frameConnection) closeChannel(pkt *FramePacket) {
 func (f *frameConnection) gotData(pkt *FramePacket) {
 	ch := f.channels[pkt.Channel]
 	if ch == nil {
-		log.Panicf("Write to nonexistent channel: %v", pkt.Channel)
+		log.Printf("Write to nonexistent channel on %v %v",
+			f.c.RemoteAddr(), pkt)
+		return
 	}
 	ch.incoming <- pkt.Data
 }

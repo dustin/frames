@@ -48,17 +48,22 @@ func (fc *frameClient) handleOpened(pkt *FramePacket) {
 		nil,
 		false,
 	}
+	log.Printf("Opened channel on %v: %v",
+		fc.c.LocalAddr(), pkt)
 	opening <- queueResult{fc.channels[pkt.Channel], nil}
 }
 
 func (fc *frameClient) handleClosed(pkt *FramePacket) {
-	log.Panicf("Closing channel %v (unhandled)", pkt.Channel)
+	log.Panicf("Closing channel on %v %v (unhandled)",
+		fc.c.LocalAddr(), pkt.Channel)
 }
 
 func (fc *frameClient) handleData(pkt *FramePacket) {
 	ch := fc.channels[pkt.Channel]
-	if ch == nil {
-		log.Panicf("Data on closed channel: %v", pkt)
+	if ch == nil || ch.closed {
+		log.Printf("Data on closed channel on %v %v: %v",
+			fc.c.LocalAddr(), ch, pkt)
+		return
 	}
 	ch.incoming <- pkt.Data
 }
@@ -98,10 +103,11 @@ func (fc *frameClient) writeRequests() {
 		_, err := fc.c.Write(e.Bytes())
 		// Clean up on close
 		if e.Cmd == FrameClose {
+			log.Printf("Closed channel: %v", e)
 			delete(fc.channels, e.Channel)
 		}
 		if err != nil {
-			panic(err)
+			log.Printf("write error: %v", err)
 		}
 	}
 }
@@ -243,6 +249,10 @@ func (f *clientChannel) SetWriteDeadline(t time.Time) error {
 }
 
 func (f *clientChannel) String() string {
-	return fmt.Sprintf("ClientChannel{%v -> %v #%v}",
-		f.fc.c.LocalAddr(), f.fc.c.RemoteAddr(), f.channel)
+	info := ""
+	if f.closed {
+		info = " CLOSED"
+	}
+	return fmt.Sprintf("ClientChannel{%v -> %v #%v%v}",
+		f.fc.c.LocalAddr(), f.fc.c.RemoteAddr(), f.channel, info)
 }
