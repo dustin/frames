@@ -50,10 +50,12 @@ func (f *FramesRoundTripper) RoundTrip(req *http.Request) (*http.Response, error
 
 	b := bufio.NewReader(c)
 	res, err := http.ReadResponse(b, req)
-	if err != nil {
+	if err == nil {
+		res.Body = &channelBodyCloser{res.Body, c}
+	} else {
 		f.err = err
+		c.Close()
 	}
-	res.Body = &channelBodyCloser{res.Body, c}
 	return res, err
 }
 
