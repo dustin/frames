@@ -153,7 +153,8 @@ func (f *frameConnection) writeLoop() {
 		}
 		_, err := f.c.Write(e.Bytes())
 		if err != nil {
-			log.Printf("Error writing: %v", err)
+			log.Printf("Error writing to %v: %v",
+				f.c.RemoteAddr(), err)
 			// Close the underlying writer and let
 			// read clean up.
 			f.c.Close()

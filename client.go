@@ -74,13 +74,15 @@ func (fc *frameClient) readResponses() {
 		hdr := make([]byte, minPktLen)
 		_, err := io.ReadFull(fc.c, hdr)
 		if err != nil {
-			log.Printf("Error reading pkt header: %v", err)
+			log.Printf("Error reading pkt header from %v: %v",
+				fc.c.RemoteAddr(), err)
 			return
 		}
 		pkt := PacketFromHeader(hdr)
 		_, err = io.ReadFull(fc.c, pkt.Data)
 		if err != nil {
-			log.Printf("Error reading pkt body: %v", err)
+			log.Printf("Error reading pkt body from %V: %v",
+				fc.c.RemoteAddr(), err)
 			return
 		}
 
