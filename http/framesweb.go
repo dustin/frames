@@ -3,6 +3,7 @@ package framesweb
 import (
 	"bufio"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 
@@ -12,22 +13,48 @@ import (
 // A RoundTripper over frames.
 type FramesRoundTripper struct {
 	Dialer frames.ChannelDialer
+	err    error
+}
+
+type channelBodyCloser struct {
+	rc io.ReadCloser
+	c  io.Closer
+}
+
+func (c *channelBodyCloser) Read(b []byte) (int, error) {
+	return c.rc.Read(b)
+}
+
+func (c *channelBodyCloser) Close() error {
+	c.rc.Close()
+	return c.c.Close()
 }
 
 func (f *FramesRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+
 	c, err := f.Dialer.Dial()
 	if err != nil {
+		f.err = err
 		return nil, err
 	}
-	defer c.Close()
 
 	err = req.Write(c)
 	if err != nil {
+		f.err = err
+		c.Close()
 		return nil, err
 	}
 
 	b := bufio.NewReader(c)
-	return http.ReadResponse(b, req)
+	res, err := http.ReadResponse(b, req)
+	if err != nil {
+		f.err = err
+	}
+	res.Body = &channelBodyCloser{res.Body, c}
+	return res, err
 }
 
 // Get an HTTP client that maintains a persistent frames connection.
