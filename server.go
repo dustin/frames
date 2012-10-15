@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"sync"
 	"time"
 )
 
@@ -80,8 +81,6 @@ func (f *frameConnection) openChannel(pkt *FramePacket) {
 			current:  nil,
 		}
 		nc.c = f.channels[chid]
-		log.Printf("Opened channel on %v %v -> %v",
-			f.c.RemoteAddr(), pkt, chid)
 	} else {
 		response.Status = FrameError
 		nc.e = err
@@ -96,8 +95,6 @@ func (f *frameConnection) closeChannel(pkt *FramePacket) {
 		log.Printf("Closing a closed channel: %v", pkt)
 		return
 	}
-	log.Printf("Closing channel on %v %v",
-		f.c.RemoteAddr(), pkt)
 	ch.Close()
 	delete(f.channels, pkt.Channel)
 }
@@ -118,9 +115,7 @@ func (f *frameConnection) readLoop() {
 		hdr := make([]byte, minPktLen)
 		_, err := io.ReadFull(f.c, hdr)
 		if err != nil {
-			if err != io.EOF {
-				log.Printf("Channel read error: %v", err)
-			}
+			log.Printf("Channel read error: %v", err)
 			f.Close()
 			return
 		}
@@ -180,6 +175,8 @@ type frameChannel struct {
 	channel  uint16
 	incoming chan []byte
 	current  []byte
+	closed   bool
+	mutex    sync.Mutex
 }
 
 func (f *frameChannel) Read(b []byte) (n int, err error) {
@@ -212,10 +209,6 @@ func (f *frameChannel) Read(b []byte) (n int, err error) {
 }
 
 func (f *frameChannel) Write(b []byte) (n int, err error) {
-	if f.incoming == nil {
-		return 0, io.EOF
-	}
-
 	bc := make([]byte, len(b))
 	copy(bc, b)
 	pkt := &FramePacket{
@@ -223,16 +216,27 @@ func (f *frameChannel) Write(b []byte) (n int, err error) {
 		Channel: f.channel,
 		Data:    bc,
 	}
+
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+	if f.closed {
+		return 0, errors.New("Write on closed channel")
+	}
+
 	f.conn.egress <- pkt
 	return len(b), nil
 }
 
 func (f *frameChannel) Close() error {
-	if f == nil || f.incoming == nil {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+
+	if f == nil || f.closed || f.incoming == nil {
 		return nil
 	}
 	close(f.incoming)
 	f.incoming = nil
+	f.closed = true
 	return nil
 }
 
