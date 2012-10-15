@@ -284,20 +284,21 @@ func (ll *listenerListener) Accept() (net.Conn, error) {
 	return c, ll.err
 }
 
-func (ll *listenerListener) listenListen(c net.Conn) {
+func (ll *listenerListener) listenListen(c net.Conn) error {
 	defer c.Close()
 
 	l, err := Listen(c)
 	if err != nil {
-		log.Fatalf("Error listening on a channel: %v", err)
+		return err
 	}
 	for {
 		c, err := l.Accept()
 		if err != nil {
-			return
+			return err
 		}
 		ll.ch <- c
 	}
+	panic("unreachable")
 }
 
 func (ll *listenerListener) listen(l net.Listener) {
