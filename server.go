@@ -25,11 +25,12 @@ type newconn struct {
 }
 
 type frameConnection struct {
-	c        net.Conn
-	channels map[uint16]*frameChannel
-	newConns chan newconn
-	egress   chan *FramePacket
-	lastChid uint16
+	c           net.Conn
+	channels    map[uint16]*frameChannel
+	newConns    chan newconn
+	egress      chan *FramePacket
+	closeMarker chan bool
+	lastChid    uint16
 }
 
 func (f *frameConnection) nextId() (uint16, error) {
@@ -52,15 +53,16 @@ func (f *frameConnection) Accept() (net.Conn, error) {
 }
 
 func (f *frameConnection) Close() error {
+	select {
+	case <-f.closeMarker:
+		return errors.New("already closed")
+	default:
+	}
+
 	for _, c := range f.channels {
 		c.Close()
 	}
-	e := f.egress
-	f.egress = nil
-	if e != nil {
-		close(e)
-	}
-	close(f.newConns)
+	close(f.closeMarker)
 	return nil
 }
 
@@ -145,8 +147,10 @@ func (f *frameConnection) readLoop() {
 
 func (f *frameConnection) writeLoop() {
 	for {
-		e, ok := <-f.egress
-		if !ok {
+		var e *FramePacket
+		select {
+		case e = <-f.egress:
+		case <-f.closeMarker:
 			return
 		}
 		_, err := f.c.Write(e.Bytes())
@@ -164,10 +168,11 @@ func (f *frameConnection) writeLoop() {
 // listener.
 func Listen(underlying net.Conn) (net.Listener, error) {
 	fc := frameConnection{
-		c:        underlying,
-		channels: map[uint16]*frameChannel{},
-		newConns: make(chan newconn),
-		egress:   make(chan *FramePacket, 4096),
+		c:           underlying,
+		channels:    map[uint16]*frameChannel{},
+		newConns:    make(chan newconn),
+		egress:      make(chan *FramePacket, 4096),
+		closeMarker: make(chan bool),
 	}
 	go fc.connHandler()
 	return &fc, nil
@@ -188,19 +193,20 @@ func (f *frameChannel) Read(b []byte) (n int, err error) {
 	read := 0
 	for len(b) > 0 && f.incoming != nil {
 		if f.current == nil || len(f.current) == 0 {
+			var ok bool
 			if read == 0 {
-				f.current = <-f.incoming
+				f.current, ok = <-f.incoming
 			} else {
-				var ok bool
 				select {
 				case f.current, ok = <-f.incoming:
-					if !ok {
-						return read, io.EOF
-					}
 				default:
 					return read, nil
 				}
 			}
+			if !ok {
+				return read, io.EOF
+			}
+
 		}
 		copied := copy(b, f.current)
 		read += copied
@@ -221,7 +227,7 @@ func (f *frameChannel) Write(b []byte) (n int, err error) {
 
 	select {
 	case f.conn.egress <- pkt:
-	default:
+	case <-f.conn.closeMarker:
 		return 0, errors.New("Write on closed channel")
 	}
 	return len(b), nil

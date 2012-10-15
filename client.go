@@ -20,10 +20,11 @@ type queueResult struct {
 }
 
 type frameClient struct {
-	c         net.Conn
-	channels  map[uint16]*clientChannel
-	egress    chan *FramePacket
-	connqueue chan chan queueResult
+	c           net.Conn
+	channels    map[uint16]*clientChannel
+	egress      chan *FramePacket
+	closeMarker chan bool
+	connqueue   chan chan queueResult
 }
 
 func (fc *frameClient) handleOpened(pkt *FramePacket) {
@@ -99,9 +100,11 @@ func (fc *frameClient) readResponses() {
 
 func (fc *frameClient) writeRequests() {
 	for {
-		e, ok := <-fc.egress
-		if !ok {
-			log.Printf("egress closed, breaking")
+		var e *FramePacket
+		select {
+		case e = <-fc.egress:
+		case <-fc.closeMarker:
+			log.Printf("closed completing writer")
 			return
 		}
 		_, err := fc.c.Write(e.Bytes())
@@ -123,6 +126,7 @@ func NewClient(c net.Conn) ChannelDialer {
 		c,
 		map[uint16]*clientChannel{},
 		make(chan *FramePacket, 256),
+		make(chan bool),
 		make(chan chan queueResult, 16),
 	}
 
@@ -133,22 +137,17 @@ func NewClient(c net.Conn) ChannelDialer {
 }
 
 func (f *frameClient) Close() error {
+	select {
+	case <-f.closeMarker:
+		return errors.New("already closed")
+	default:
+	}
+
 	for _, fc := range f.channels {
 		fc.terminate()
 	}
 
-	c := f.connqueue
-	f.connqueue = nil
-	if c != nil {
-		close(c)
-	}
-
-	e := f.egress
-	f.egress = nil
-	if e != nil {
-		close(e)
-	}
-
+	close(f.closeMarker)
 	return f.c.Close()
 }
 
@@ -159,13 +158,13 @@ func (f *frameClient) Dial() (net.Conn, error) {
 
 	select {
 	case f.connqueue <- ch:
-	default:
+	case <-f.closeMarker:
 		return nil, errors.New("closed client")
 	}
 
 	select {
 	case f.egress <- pkt:
-	default:
+	case <-f.closeMarker:
 		return nil, errors.New("Closed client")
 	}
 
@@ -221,16 +220,19 @@ func (f *clientChannel) Write(b []byte) (n int, err error) {
 
 	select {
 	case f.fc.egress <- pkt:
-	default:
+	case <-f.fc.closeMarker:
 		return 0, errors.New("Write on closed channel")
 	}
 	return len(b), nil
 }
 
 func (f *clientChannel) Close() error {
-	f.fc.egress <- &FramePacket{
+	select {
+	case f.fc.egress <- &FramePacket{
 		Cmd:     FrameClose,
 		Channel: f.channel,
+	}:
+	default:
 	}
 	f.terminate()
 	return nil
