@@ -16,9 +16,9 @@ type ChannelDialer interface {
 }
 
 type Info struct {
-	BytesRead    uint64
-	BytesWritten uint64
-	ChannelsOpen int
+	BytesRead    uint64 `json:"read"`
+	BytesWritten uint64 `json:"written"`
+	ChannelsOpen int    `json:"channels"`
 }
 
 func (i Info) String() string {
