@@ -270,11 +270,13 @@ func (f *clientChannel) Close() error {
 	select {
 	case <-f.fc.closeMarker:
 		// Socket's closed, we're done
+	case <-f.closeMarker:
+		// This channel is already closed.
 	case f.fc.egress <- &FramePacket{
 		Cmd:     FrameClose,
 		Channel: f.channel,
 	}:
-	default:
+		// Send intent to close.
 	}
 	f.terminate()
 	return nil

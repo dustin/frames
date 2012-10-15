@@ -63,7 +63,7 @@ func (f *frameConnection) Close() error {
 		c.Close()
 	}
 	close(f.closeMarker)
-	return nil
+	return f.c.Close()
 }
 
 func (f *frameConnection) Addr() net.Addr {
@@ -116,20 +116,18 @@ func (f *frameConnection) gotData(pkt *FramePacket) {
 }
 
 func (f *frameConnection) readLoop() {
-	defer f.c.Close()
+	defer f.Close()
 	for {
 		hdr := make([]byte, minPktLen)
 		_, err := io.ReadFull(f.c, hdr)
 		if err != nil {
 			log.Printf("Channel read error: %v", err)
-			f.Close()
 			return
 		}
 		pkt := PacketFromHeader(hdr)
 		_, err = io.ReadFull(f.c, pkt.Data)
 		if err != nil {
 			log.Printf("Channel read error: %v", err)
-			f.Close()
 			return
 		}
 
@@ -147,6 +145,9 @@ func (f *frameConnection) readLoop() {
 }
 
 func (f *frameConnection) writeLoop() {
+	// Only close the underlying connection on return.  The read
+	// loop does the rest of the cleanup.
+	defer f.c.Close()
 	for {
 		var e *FramePacket
 		select {
@@ -158,9 +159,7 @@ func (f *frameConnection) writeLoop() {
 		if err != nil {
 			log.Printf("Error writing to %v: %v",
 				f.c.RemoteAddr(), err)
-			// Close the underlying writer and let
-			// read clean up.
-			f.c.Close()
+			return
 		}
 	}
 }
