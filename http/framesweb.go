@@ -7,7 +7,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/dustin/frames"
@@ -17,7 +16,6 @@ import (
 type FramesRoundTripper struct {
 	Dialer  frames.ChannelDialer
 	Timeout time.Duration
-	Logger  *log.Logger
 	err     error
 }
 
@@ -36,7 +34,7 @@ func (c *channelBodyCloser) Read(b []byte) (int, error) {
 
 func (c *channelBodyCloser) Close() error {
 	if !c.t.Stop() {
-		c.frt.Logger.Printf("framesweb: body of %v %v was closed after %v",
+		log.Printf("framesweb: body of %v %v was closed after %v",
 			c.req.Method, c.req.URL, time.Since(c.start))
 	}
 	c.rc.Close()
@@ -50,7 +48,7 @@ func (f *FramesRoundTripper) RoundTrip(req *http.Request) (*http.Response, error
 
 	start := time.Now()
 	sendT := time.AfterFunc(f.Timeout, func() {
-		f.Logger.Printf("framesweb: %v request for %v is taking longer than %v",
+		log.Printf("framesweb: %v request for %v is taking longer than %v",
 			req.Method, req.URL, f.Timeout)
 	})
 
@@ -68,13 +66,13 @@ func (f *FramesRoundTripper) RoundTrip(req *http.Request) (*http.Response, error
 	}
 
 	if !sendT.Stop() {
-		f.Logger.Printf("framesweb: completed %v request for %v in %v",
+		log.Printf("framesweb: completed %v request for %v in %v",
 			req.Method, req.URL, time.Since(start))
 	}
 
 	start = time.Now()
 	endT := time.AfterFunc(f.Timeout, func() {
-		f.Logger.Printf("framesweb: response for %v %v is taking longer than %v",
+		log.Printf("framesweb: response for %v %v is taking longer than %v",
 			req.Method, req.URL, f.Timeout)
 	})
 
@@ -105,7 +103,6 @@ func NewFramesClient(n, addr string) (*http.Client, error) {
 	frt := &FramesRoundTripper{
 		Dialer:  frames.NewClient(c),
 		Timeout: time.Hour,
-		Logger:  log.New(os.Stdout, "", log.LstdFlags),
 	}
 
 	hc := &http.Client{
