@@ -168,7 +168,7 @@ func NewClient(c net.Conn) ChannelDialer {
 func (f *frameClient) Close() error {
 	select {
 	case <-f.closeMarker:
-		return errors.New("already closed")
+		return nil // already closed
 	default:
 	}
 

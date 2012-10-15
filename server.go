@@ -55,7 +55,7 @@ func (f *frameConnection) Accept() (net.Conn, error) {
 func (f *frameConnection) Close() error {
 	select {
 	case <-f.closeMarker:
-		return errors.New("already closed")
+		return nil // already closed
 	default:
 	}
 
