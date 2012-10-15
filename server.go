@@ -80,10 +80,11 @@ func (f *frameConnection) openChannel(pkt *FramePacket) {
 	nc := newconn{}
 	if err == nil {
 		f.channels[chid] = &frameChannel{
-			conn:     f,
-			channel:  chid,
-			incoming: make(chan []byte, 1024),
-			current:  nil,
+			conn:        f,
+			channel:     chid,
+			incoming:    make(chan []byte, 1024),
+			current:     nil,
+			closeMarker: make(chan bool),
 		}
 		nc.c = f.channels[chid]
 	} else {
@@ -179,11 +180,11 @@ func Listen(underlying net.Conn) (net.Listener, error) {
 }
 
 type frameChannel struct {
-	conn     *frameConnection
-	channel  uint16
-	incoming chan []byte
-	current  []byte
-	closed   bool
+	conn        *frameConnection
+	channel     uint16
+	incoming    chan []byte
+	current     []byte
+	closeMarker chan bool
 }
 
 func (f *frameChannel) Read(b []byte) (n int, err error) {
@@ -233,14 +234,22 @@ func (f *frameChannel) Write(b []byte) (n int, err error) {
 	return len(b), nil
 }
 
+func (f *frameChannel) isClosed() bool {
+	select {
+	case <-f.closeMarker:
+		return true
+	default:
+	}
+	return false
+}
+
 func (f *frameChannel) Close() error {
-	if f == nil || f.closed || f.incoming == nil {
+	if f == nil || f.isClosed() {
 		return nil
 	}
-	i := f.incoming
-	f.incoming = nil
-	close(i)
-	f.closed = true
+
+	close(f.closeMarker)
+
 	return nil
 }
 

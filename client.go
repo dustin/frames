@@ -66,7 +66,7 @@ func (fc *frameClient) handleOpened(pkt *FramePacket) {
 		pkt.Channel,
 		make(chan []byte, 8192),
 		nil,
-		false,
+		make(chan bool),
 	}
 	opening <- queueResult{fc.channels[pkt.Channel], nil}
 }
@@ -78,12 +78,18 @@ func (fc *frameClient) handleClosed(pkt *FramePacket) {
 
 func (fc *frameClient) handleData(pkt *FramePacket) {
 	ch := fc.channels[pkt.Channel]
-	if ch == nil || ch.closed {
-		log.Printf("Data on closed channel on %v %v: %v",
+	if ch == nil {
+		log.Printf("Data on non-existent channel on %v %v: %v",
 			fc.c.LocalAddr(), ch, pkt)
 		return
 	}
-	ch.incoming <- pkt.Data
+
+	select {
+	case ch.incoming <- pkt.Data:
+	case <-ch.closeMarker:
+		log.Printf("Data on closed channel on %v: %v: %v",
+			fc.c.LocalAddr(), ch, pkt)
+	}
 }
 
 func (fc *frameClient) readResponses() {
@@ -196,15 +202,24 @@ func (f *frameClient) Dial() (net.Conn, error) {
 }
 
 type clientChannel struct {
-	fc       *frameClient
-	channel  uint16
-	incoming chan []byte
-	current  []byte
-	closed   bool
+	fc          *frameClient
+	channel     uint16
+	incoming    chan []byte
+	current     []byte
+	closeMarker chan bool
+}
+
+func (f *clientChannel) isClosed() bool {
+	select {
+	case <-f.closeMarker:
+		return true
+	default:
+	}
+	return false
 }
 
 func (f *clientChannel) Read(b []byte) (n int, err error) {
-	if f.closed {
+	if f.isClosed() {
 		return 0, errors.New("Read on closed channel")
 	}
 	read := 0
@@ -243,14 +258,18 @@ func (f *clientChannel) Write(b []byte) (n int, err error) {
 
 	select {
 	case f.fc.egress <- pkt:
-	case <-f.fc.closeMarker:
+	case <-f.closeMarker:
 		return 0, errors.New("Write on closed channel")
+	case <-f.fc.closeMarker:
+		return 0, errors.New("Write on closed connection")
 	}
 	return len(b), nil
 }
 
 func (f *clientChannel) Close() error {
 	select {
+	case <-f.fc.closeMarker:
+		// Socket's closed, we're done
 	case f.fc.egress <- &FramePacket{
 		Cmd:     FrameClose,
 		Channel: f.channel,
@@ -262,11 +281,8 @@ func (f *clientChannel) Close() error {
 }
 
 func (f *clientChannel) terminate() {
-	if !f.closed {
-		i := f.incoming
-		f.incoming = nil
-		close(i)
-		f.closed = true
+	if !f.isClosed() {
+		close(f.closeMarker)
 	}
 }
 
@@ -305,7 +321,7 @@ func (f *clientChannel) SetWriteDeadline(t time.Time) error {
 
 func (f *clientChannel) String() string {
 	info := ""
-	if f.closed {
+	if f.isClosed() {
 		info = " CLOSED"
 	}
 	return fmt.Sprintf("ClientChannel{%v -> %v #%v%v}",
