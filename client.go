@@ -12,6 +12,18 @@ import (
 type ChannelDialer interface {
 	io.Closer
 	Dial() (net.Conn, error)
+	GetInfo() Info
+}
+
+type Info struct {
+	BytesRead    uint64
+	BytesWritten uint64
+	ChannelsOpen int
+}
+
+func (i Info) String() string {
+	return fmt.Sprintf("{FrameInfo Wrote: %v, Read: %v, Open: %v}",
+		i.BytesWritten, i.BytesRead, i.ChannelsOpen)
 }
 
 type queueResult struct {
@@ -25,6 +37,13 @@ type frameClient struct {
 	egress      chan *FramePacket
 	closeMarker chan bool
 	connqueue   chan chan queueResult
+	info        Info
+}
+
+func (fc *frameClient) GetInfo() Info {
+	rv := fc.info
+	rv.ChannelsOpen = len(fc.channels)
+	return rv
 }
 
 func (fc *frameClient) handleOpened(pkt *FramePacket) {
@@ -71,14 +90,16 @@ func (fc *frameClient) readResponses() {
 	defer fc.Close()
 	for {
 		hdr := make([]byte, minPktLen)
-		_, err := io.ReadFull(fc.c, hdr)
+		r, err := io.ReadFull(fc.c, hdr)
+		fc.info.BytesRead += uint64(r)
 		if err != nil {
 			log.Printf("Error reading pkt header from %v: %v",
 				fc.c.RemoteAddr(), err)
 			return
 		}
 		pkt := PacketFromHeader(hdr)
-		_, err = io.ReadFull(fc.c, pkt.Data)
+		r, err = io.ReadFull(fc.c, pkt.Data)
+		fc.info.BytesRead += uint64(r)
 		if err != nil {
 			log.Printf("Error reading pkt body from %v: %v",
 				fc.c.RemoteAddr(), err)
@@ -107,7 +128,8 @@ func (fc *frameClient) writeRequests() {
 			log.Printf("closed completing writer")
 			return
 		}
-		_, err := fc.c.Write(e.Bytes())
+		written, err := fc.c.Write(e.Bytes())
+		fc.info.BytesWritten += uint64(written)
 		// Clean up on close
 		if e.Cmd == FrameClose {
 			delete(fc.channels, e.Channel)
@@ -128,6 +150,7 @@ func NewClient(c net.Conn) ChannelDialer {
 		make(chan *FramePacket, 256),
 		make(chan bool),
 		make(chan chan queueResult, 16),
+		Info{},
 	}
 
 	go fc.readResponses()
