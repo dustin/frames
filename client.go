@@ -6,7 +6,6 @@ import (
 	"io"
 	"log"
 	"net"
-	"sync"
 	"time"
 )
 
@@ -48,7 +47,6 @@ func (fc *frameClient) handleOpened(pkt *FramePacket) {
 		make(chan []byte, 8192),
 		nil,
 		false,
-		sync.Mutex{},
 	}
 	opening <- queueResult{fc.channels[pkt.Channel], nil}
 }
@@ -81,7 +79,7 @@ func (fc *frameClient) readResponses() {
 		pkt := PacketFromHeader(hdr)
 		_, err = io.ReadFull(fc.c, pkt.Data)
 		if err != nil {
-			log.Printf("Error reading pkt body from %V: %v",
+			log.Printf("Error reading pkt body from %v: %v",
 				fc.c.RemoteAddr(), err)
 			return
 		}
@@ -138,7 +136,19 @@ func (f *frameClient) Close() error {
 	for _, fc := range f.channels {
 		fc.terminate()
 	}
-	close(f.egress)
+
+	c := f.connqueue
+	f.connqueue = nil
+	if c != nil {
+		close(c)
+	}
+
+	e := f.egress
+	f.egress = nil
+	if e != nil {
+		close(e)
+	}
+
 	return f.c.Close()
 }
 
@@ -147,8 +157,17 @@ func (f *frameClient) Dial() (net.Conn, error) {
 
 	ch := make(chan queueResult)
 
-	f.connqueue <- ch
-	f.egress <- pkt
+	select {
+	case f.connqueue <- ch:
+	default:
+		return nil, errors.New("closed client")
+	}
+
+	select {
+	case f.egress <- pkt:
+	default:
+		return nil, errors.New("Closed client")
+	}
 
 	qr := <-ch
 	return qr.conn, qr.err
@@ -160,12 +179,11 @@ type clientChannel struct {
 	incoming chan []byte
 	current  []byte
 	closed   bool
-	mutex    sync.Mutex
 }
 
 func (f *clientChannel) Read(b []byte) (n int, err error) {
 	if f.closed {
-		return 0, io.EOF
+		return 0, errors.New("Read on closed channel")
 	}
 	read := 0
 	for len(b) > 0 {
@@ -193,7 +211,6 @@ func (f *clientChannel) Read(b []byte) (n int, err error) {
 }
 
 func (f *clientChannel) Write(b []byte) (n int, err error) {
-
 	bc := make([]byte, len(b))
 	copy(bc, b)
 	pkt := &FramePacket{
@@ -202,13 +219,11 @@ func (f *clientChannel) Write(b []byte) (n int, err error) {
 		Data:    bc,
 	}
 
-	f.mutex.Lock()
-	defer f.mutex.Unlock()
-	if f.closed {
+	select {
+	case f.fc.egress <- pkt:
+	default:
 		return 0, errors.New("Write on closed channel")
 	}
-
-	f.fc.egress <- pkt
 	return len(b), nil
 }
 
@@ -222,11 +237,10 @@ func (f *clientChannel) Close() error {
 }
 
 func (f *clientChannel) terminate() {
-	f.mutex.Lock()
-	defer f.mutex.Unlock()
-
 	if !f.closed {
-		close(f.incoming)
+		i := f.incoming
+		f.incoming = nil
+		close(i)
 		f.closed = true
 	}
 }

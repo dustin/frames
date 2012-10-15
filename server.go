@@ -7,7 +7,6 @@ import (
 	"io"
 	"log"
 	"net"
-	"sync"
 	"time"
 )
 
@@ -56,7 +55,11 @@ func (f *frameConnection) Close() error {
 	for _, c := range f.channels {
 		c.Close()
 	}
-	close(f.egress)
+	e := f.egress
+	f.egress = nil
+	if e != nil {
+		close(e)
+	}
 	close(f.newConns)
 	return nil
 }
@@ -176,7 +179,6 @@ type frameChannel struct {
 	incoming chan []byte
 	current  []byte
 	closed   bool
-	mutex    sync.Mutex
 }
 
 func (f *frameChannel) Read(b []byte) (n int, err error) {
@@ -217,25 +219,21 @@ func (f *frameChannel) Write(b []byte) (n int, err error) {
 		Data:    bc,
 	}
 
-	f.mutex.Lock()
-	defer f.mutex.Unlock()
-	if f.closed {
+	select {
+	case f.conn.egress <- pkt:
+	default:
 		return 0, errors.New("Write on closed channel")
 	}
-
-	f.conn.egress <- pkt
 	return len(b), nil
 }
 
 func (f *frameChannel) Close() error {
-	f.mutex.Lock()
-	defer f.mutex.Unlock()
-
 	if f == nil || f.closed || f.incoming == nil {
 		return nil
 	}
-	close(f.incoming)
+	i := f.incoming
 	f.incoming = nil
+	close(i)
 	f.closed = true
 	return nil
 }
