@@ -39,8 +39,9 @@ type FramePacket struct {
 // Header:
 // 2 bytes data length,
 // 2 bytes channel,
-// 2 bytes seq,
-// 1 byte command, data
+// 1 byte command
+// 1 bytes status
+// [<length> bytes of data]
 
 // Convert this packet to its network representation.
 func (fp FramePacket) Bytes() []byte {

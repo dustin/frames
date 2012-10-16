@@ -1,0 +1,59 @@
+Frames is a simple multiplexing protocol I use when I need to ask for
+a lot of different things concurrently between two servers and I don't
+want to burn lots of file descriptors or rely on pipelining timings
+and such things to do it.
+
+This should be usable anywhere you use a =net.Conn= today.  There's
+some convenience support for HTTP as I'm using it quite a bit as an
+HTTP transport.
+
+* Protocol
+
+The protocol is really simple, just a 6 byte header followed by 0 or
+more bytes of data (maximum data size of 2^16).
+
+|-------------+---------------------+-------------+----------|
+| Field       | Type                | Byte Offset | Byte Len |
+|-------------+---------------------+-------------+----------|
+| Data Length | unsigned 16-bit int | 0           | 2        |
+| Channel     | unsigned 16-bit int | 2           | 2        |
+| Command     | byte                | 4           | 1        |
+| Status      | byte                | 5           | 1        |
+
+
+** Definitions
+
+*** Commands
+
+|---------+------|
+| Command |   ID |
+|---------+------|
+| Open    | 0x00 |
+| Close   | 0x01 |
+| Data    | 0x02 |
+
+
+*** Status
+
+|---------+----|
+| Status  | ID |
+|---------+----|
+| Success |  0 |
+| Error   |  1 |
+
+
+** Flow
+
+A client begins by establishing a TCP connection.  To do anything
+useful, it must first issue an =Open= command to get a new channel
+assigned.  If this is successful (=Status= = =Success=), the client
+will get a response with the Command set to =Open= and the channel
+ID set to the new channel.
+
+A client may open as many channels as necessary and then send =Data=
+packets along with the corresponding data.
+
+A client MUST =Close= the channel when you're done with it if you
+intend to continue using the service.  If the client is completely
+done, it MAY drop the underlying TCP connection and the server MUST
+clean up after you.
