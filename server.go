@@ -13,12 +13,6 @@ import (
 // Error returned when we've run out of channels.
 var ChannelsExhausted = errors.New("channels exhausted")
 
-func (f *frameConnection) connHandler() {
-	defer f.c.Close()
-	go f.readLoop()
-	f.writeLoop()
-}
-
 type newconn struct {
 	c net.Conn
 	e error
@@ -192,7 +186,8 @@ func Listen(underlying net.Conn) (net.Listener, error) {
 		egress:      make(chan *FramePacket, 4096),
 		closeMarker: make(chan bool),
 	}
-	go fc.connHandler()
+	go fc.readLoop()
+	go fc.writeLoop()
 	return &fc, nil
 }
 
