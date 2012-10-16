@@ -137,7 +137,6 @@ func (fc *frameClient) writeRequests() {
 		select {
 		case e = <-fc.egress:
 		case <-fc.closeMarker:
-			log.Printf("closed completing writer")
 			return
 		}
 		written, err := fc.c.Write(e.Bytes())
