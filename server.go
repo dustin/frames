@@ -45,11 +45,16 @@ func (f *frameConnection) nextId() (uint16, error) {
 }
 
 func (f *frameConnection) Accept() (net.Conn, error) {
-	c, ok := <-f.newConns
-	if !ok {
+	select {
+	case c, ok := <-f.newConns:
+		if !ok {
+			return nil, io.EOF
+		}
+		return c.c, c.e
+	case <-f.closeMarker:
 		return nil, io.EOF
 	}
-	return c.c, c.e
+	panic("unreachable")
 }
 
 func (f *frameConnection) Close() error {
@@ -91,8 +96,16 @@ func (f *frameConnection) openChannel(pkt *FramePacket) {
 		response.Status = FrameError
 		nc.e = err
 	}
-	f.egress <- response
-	f.newConns <- nc
+	select {
+	case f.egress <- response:
+	case <-f.closeMarker:
+		nc.c = nil
+		nc.e = errors.New("connection closed")
+	}
+	select {
+	case f.newConns <- nc:
+	case <-f.closeMarker:
+	}
 }
 
 func (f *frameConnection) closeChannel(pkt *FramePacket) {
@@ -112,7 +125,10 @@ func (f *frameConnection) gotData(pkt *FramePacket) {
 			f.c.RemoteAddr(), pkt)
 		return
 	}
-	ch.incoming <- pkt.Data
+	select {
+	case ch.incoming <- pkt.Data:
+	case <-ch.closeMarker:
+	}
 }
 
 func (f *frameConnection) readLoop() {
@@ -197,10 +213,16 @@ func (f *frameChannel) Read(b []byte) (n int, err error) {
 		if f.current == nil || len(f.current) == 0 {
 			var ok bool
 			if read == 0 {
-				f.current, ok = <-f.incoming
+				select {
+				case f.current, ok = <-f.incoming:
+				case <-f.closeMarker:
+				case <-f.conn.closeMarker:
+				}
 			} else {
 				select {
 				case f.current, ok = <-f.incoming:
+				case <-f.closeMarker:
+				case <-f.conn.closeMarker:
 				default:
 					return read, nil
 				}
@@ -280,9 +302,11 @@ func (f *frameChannel) String() string {
 }
 
 type listenerListener struct {
-	ch         chan net.Conn
-	underlying net.Listener
-	err        error
+	ch          chan net.Conn
+	underlying  net.Listener
+	closeMarker chan bool
+	closed      bool
+	err         error
 }
 
 func (ll *listenerListener) Addr() net.Addr {
@@ -290,12 +314,21 @@ func (ll *listenerListener) Addr() net.Addr {
 }
 
 func (ll *listenerListener) Close() error {
+	if !ll.closed {
+		close(ll.closeMarker)
+		ll.closed = true
+	}
 	return ll.underlying.Close()
 }
 
 func (ll *listenerListener) Accept() (net.Conn, error) {
-	c := <-ll.ch
-	return c, ll.err
+	select {
+	case c := <-ll.ch:
+		return c, ll.err
+	case <-ll.closeMarker:
+		return nil, io.EOF
+	}
+	panic("unreachable")
 }
 
 func (ll *listenerListener) listenListen(c net.Conn) error {
@@ -310,7 +343,13 @@ func (ll *listenerListener) listenListen(c net.Conn) error {
 		if err != nil {
 			return err
 		}
-		ll.ch <- c
+		select {
+		case ll.ch <- c:
+		case <-ll.closeMarker:
+			c.Close()
+			return io.EOF
+		}
+
 	}
 	panic("unreachable")
 }
@@ -319,12 +358,10 @@ func (ll *listenerListener) listen(l net.Listener) {
 	for {
 		c, err := l.Accept()
 		if err != nil {
+			close(ll.closeMarker)
+			ll.closed = true
 			ll.err = err
-			if ll.ch != nil {
-				close(ll.ch)
-				ll.ch = nil
-				return
-			}
+			return
 		}
 		go ll.listenListen(c)
 	}
@@ -333,7 +370,12 @@ func (ll *listenerListener) listen(l net.Listener) {
 // Get a listener that listens on a listener and returns framed
 // connections opened from connections opened by the inner listener.
 func ListenerListener(l net.Listener) (net.Listener, error) {
-	ll := &listenerListener{make(chan net.Conn), l, nil}
+	ll := &listenerListener{
+		make(chan net.Conn),
+		l,
+		make(chan bool),
+		false,
+		nil}
 
 	go ll.listen(l)
 

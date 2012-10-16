@@ -57,7 +57,10 @@ func (fc *frameClient) handleOpened(pkt *FramePacket) {
 
 	if pkt.Status != FrameSuccess {
 		err := frameError(*pkt)
-		opening <- queueResult{err: err}
+		select {
+		case opening <- queueResult{err: err}:
+		case <-fc.closeMarker:
+		}
 		return
 	}
 
@@ -68,7 +71,10 @@ func (fc *frameClient) handleOpened(pkt *FramePacket) {
 		nil,
 		make(chan bool),
 	}
-	opening <- queueResult{fc.channels[pkt.Channel], nil}
+	select {
+	case opening <- queueResult{fc.channels[pkt.Channel], nil}:
+	case <-fc.closeMarker:
+	}
 }
 
 func (fc *frameClient) handleClosed(pkt *FramePacket) {
@@ -197,8 +203,13 @@ func (f *frameClient) Dial() (net.Conn, error) {
 		return nil, errors.New("Closed client")
 	}
 
-	qr := <-ch
-	return qr.conn, qr.err
+	select {
+	case qr := <-ch:
+		return qr.conn, qr.err
+	case <-f.closeMarker:
+		return nil, io.EOF
+	}
+	panic("unreachable")
 }
 
 type clientChannel struct {
@@ -227,10 +238,16 @@ func (f *clientChannel) Read(b []byte) (n int, err error) {
 		if f.current == nil || len(f.current) == 0 {
 			var ok bool
 			if read == 0 {
-				f.current, ok = <-f.incoming
+				select {
+				case f.current, ok = <-f.incoming:
+				case <-f.closeMarker:
+				case <-f.fc.closeMarker:
+				}
 			} else {
 				select {
 				case f.current, ok = <-f.incoming:
+				case <-f.closeMarker:
+				case <-f.fc.closeMarker:
 				default:
 					return read, nil
 				}
