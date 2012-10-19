@@ -67,7 +67,7 @@ func (fc *frameClient) handleOpened(pkt *FramePacket) {
 	fc.channels[pkt.Channel] = &clientChannel{
 		fc,
 		pkt.Channel,
-		make(chan []byte, 8192),
+		make(chan []byte, 16),
 		nil,
 		make(chan bool),
 	}
@@ -158,7 +158,7 @@ func NewClient(c net.Conn) ChannelDialer {
 	fc := &frameClient{
 		c,
 		map[uint16]*clientChannel{},
-		make(chan *FramePacket, 256),
+		make(chan *FramePacket, 16),
 		make(chan bool),
 		make(chan chan queueResult, 16),
 		Info{},
