@@ -300,7 +300,6 @@ type listenerListener struct {
 	ch          chan net.Conn
 	underlying  net.Listener
 	closeMarker chan bool
-	closed      bool
 	err         error
 }
 
@@ -308,10 +307,18 @@ func (ll *listenerListener) Addr() net.Addr {
 	return ll.underlying.Addr()
 }
 
+func (ll *listenerListener) closed() bool {
+	select {
+	case <-ll.closeMarker:
+		return true
+	default:
+	}
+	return false
+}
+
 func (ll *listenerListener) Close() error {
-	if !ll.closed {
+	if !ll.closed() {
 		close(ll.closeMarker)
-		ll.closed = true
 	}
 	return ll.underlying.Close()
 }
@@ -353,8 +360,7 @@ func (ll *listenerListener) listen(l net.Listener) {
 	for {
 		c, err := l.Accept()
 		if err != nil {
-			close(ll.closeMarker)
-			ll.closed = true
+			ll.Close()
 			ll.err = err
 			return
 		}
@@ -369,7 +375,6 @@ func ListenerListener(l net.Listener) (net.Listener, error) {
 		make(chan net.Conn),
 		l,
 		make(chan bool),
-		false,
 		nil}
 
 	go ll.listen(l)
