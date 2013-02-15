@@ -200,11 +200,11 @@ type frameChannel struct {
 }
 
 func (f *frameChannel) Read(b []byte) (n int, err error) {
-	if f.incoming == nil {
-		return 0, io.EOF
+	if f.isClosed() {
+		return 0, errors.New("Read on a closed channel.")
 	}
 	read := 0
-	for len(b) > 0 && f.incoming != nil {
+	for len(b) > 0 {
 		if f.current == nil || len(f.current) == 0 {
 			var ok bool
 			if read == 0 {
