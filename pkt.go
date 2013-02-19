@@ -24,6 +24,10 @@ const (
 
 const minPktLen = 6
 
+// Could do a full 16-bits, but a smaller value makes it easy to tell
+// when we've gone out of bounds.
+const maxWriteLen = 32768
+
 // A packet sent or received over a connection.
 type FramePacket struct {
 	// The command
@@ -80,10 +84,14 @@ func PacketFromHeader(hdr []byte) FramePacket {
 	if len(hdr) < minPktLen {
 		panic("Too short")
 	}
+	dlen := binary.BigEndian.Uint16(hdr)
+	if dlen > maxWriteLen {
+		panic("data length exceeds max data len")
+	}
 	return FramePacket{
 		Cmd:     FrameCmd(hdr[4]),
 		Channel: binary.BigEndian.Uint16(hdr[2:]),
-		Data:    make([]byte, binary.BigEndian.Uint16(hdr)),
+		Data:    make([]byte, dlen),
 	}
 }
 

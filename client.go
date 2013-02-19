@@ -264,6 +264,10 @@ func (f *clientChannel) Read(b []byte) (n int, err error) {
 }
 
 func (f *clientChannel) Write(b []byte) (n int, err error) {
+	if len(b) > maxWriteLen {
+		b = b[0:maxWriteLen]
+	}
+
 	bc := make([]byte, len(b))
 	copy(bc, b)
 	pkt := &FramePacket{
