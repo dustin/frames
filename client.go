@@ -208,7 +208,6 @@ func (f *frameClient) Dial() (net.Conn, error) {
 	case <-f.closeMarker:
 		return nil, io.EOF
 	}
-	panic("unreachable")
 }
 
 type clientChannel struct {

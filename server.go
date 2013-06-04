@@ -48,7 +48,6 @@ func (f *frameConnection) Accept() (net.Conn, error) {
 	case <-f.closeMarker:
 		return nil, io.EOF
 	}
-	panic("unreachable")
 }
 
 func (f *frameConnection) Close() error {
@@ -334,7 +333,6 @@ func (ll *listenerListener) Accept() (net.Conn, error) {
 	case <-ll.closeMarker:
 		return nil, io.EOF
 	}
-	panic("unreachable")
 }
 
 func (ll *listenerListener) listenListen(c net.Conn) error {
@@ -357,7 +355,6 @@ func (ll *listenerListener) listenListen(c net.Conn) error {
 		}
 
 	}
-	panic("unreachable")
 }
 
 func (ll *listenerListener) listen(l net.Listener) {
