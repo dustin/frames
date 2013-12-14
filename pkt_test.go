@@ -26,7 +26,6 @@ func TestPktEncoding(t *testing.T) {
 		if !reflect.DeepEqual(got, test.exp) {
 			t.Errorf("Error encoding %v\nExpected:\n%#v\nGot:\n%#v",
 				test.pkt, test.exp, got)
-			t.Fail()
 		}
 	}
 }

@@ -50,7 +50,6 @@ func runTestServer(t *testing.T) *testService {
 				return
 			default:
 				t.Errorf("Error reading: %v", err)
-				t.Fail()
 				return
 			}
 			fmt.Fprintf(c, "Ack your %v", l)
