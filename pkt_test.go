@@ -27,6 +27,7 @@ func TestPktEncoding(t *testing.T) {
 			t.Errorf("Error encoding %v\nExpected:\n%#v\nGot:\n%#v",
 				test.pkt, test.exp, got)
 		}
+		t.Logf("Packet: %v", test.pkt)
 	}
 }
 
