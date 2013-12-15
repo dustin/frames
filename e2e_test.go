@@ -120,7 +120,7 @@ func TestEndToEnd(t *testing.T) {
 		t.Fatalf("Expected 5 channels, only saw %v", tc.channels)
 	}
 	if tc.msgs != 25 {
-		t.Fatalf("Expected 25 channels, only saw %v", tc.msgs)
+		t.Fatalf("Expected 25 messages, only saw %v", tc.msgs)
 	}
 }
 
