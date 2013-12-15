@@ -115,6 +115,10 @@ func TestEndToEnd(t *testing.T) {
 	}
 
 	wg.Wait()
+	err = fc.Close()
+	if err != nil {
+		t.Errorf("Expected no error closing, got %v", err)
+	}
 
 	if tc.channels != 5 {
 		t.Fatalf("Expected 5 channels, only saw %v", tc.channels)
