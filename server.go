@@ -1,4 +1,4 @@
-// A simple multiplexing protocol.
+// Package frames is a simple multiplexing protocol.
 package frames
 
 import (
@@ -10,8 +10,8 @@ import (
 	"time"
 )
 
-// Error returned when we've run out of channels.
-var ChannelsExhausted = errors.New("channels exhausted")
+// ErrChannelsExhausted is returned when we've run out of channels.
+var ErrChannelsExhausted = errors.New("channels exhausted")
 
 type newconn struct {
 	c net.Conn
@@ -27,7 +27,7 @@ type frameConnection struct {
 	lastChid    uint16
 }
 
-func (f *frameConnection) nextId() (uint16, error) {
+func (f *frameConnection) nextID() (uint16, error) {
 	f.lastChid++
 	for i := 0; i < 0xffff; i++ {
 		if _, taken := f.channels[f.lastChid]; !taken {
@@ -35,7 +35,7 @@ func (f *frameConnection) nextId() (uint16, error) {
 		}
 		f.lastChid++
 	}
-	return 0, ChannelsExhausted
+	return 0, ErrChannelsExhausted
 }
 
 func (f *frameConnection) Accept() (net.Conn, error) {
@@ -69,7 +69,7 @@ func (f *frameConnection) Addr() net.Addr {
 }
 
 func (f *frameConnection) openChannel(pkt *FramePacket) {
-	chid, err := f.nextId()
+	chid, err := f.nextID()
 	response := &FramePacket{
 		Cmd:     pkt.Cmd,
 		Status:  FrameSuccess,
@@ -200,7 +200,7 @@ type frameChannel struct {
 
 func (f *frameChannel) Read(b []byte) (n int, err error) {
 	if f.isClosed() {
-		return 0, errors.New("Read on a closed channel.")
+		return 0, errors.New("read on a closed channel")
 	}
 	read := 0
 	for len(b) > 0 {
@@ -250,7 +250,7 @@ func (f *frameChannel) Write(b []byte) (n int, err error) {
 	select {
 	case f.conn.egress <- pkt:
 	case <-f.conn.closeMarker:
-		return 0, errors.New("Write on closed channel")
+		return 0, errors.New("write on closed channel")
 	}
 	return len(b), nil
 }
@@ -283,15 +283,15 @@ func (f *frameChannel) RemoteAddr() net.Addr {
 }
 
 func (f *frameChannel) SetDeadline(t time.Time) error {
-	return errors.New("Not Implemented")
+	return errors.New("not Implemented")
 }
 
 func (f *frameChannel) SetReadDeadline(t time.Time) error {
-	return errors.New("Not Implemented")
+	return errors.New("not Implemented")
 }
 
 func (f *frameChannel) SetWriteDeadline(t time.Time) error {
-	return errors.New("Not Implemented")
+	return errors.New("not Implemented")
 }
 
 func (f *frameChannel) String() string {
@@ -369,8 +369,9 @@ func (ll *listenerListener) listen(l net.Listener) {
 	}
 }
 
-// Get a listener that listens on a listener and returns framed
-// connections opened from connections opened by the inner listener.
+// ListenerListener is a listener that listens on a net.Listener and
+// returns framed connections opened from connections opened by the
+// underlying Listener.
 func ListenerListener(l net.Listener) (net.Listener, error) {
 	ll := &listenerListener{
 		make(chan net.Conn),

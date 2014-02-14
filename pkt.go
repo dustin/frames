@@ -5,20 +5,25 @@ import (
 	"fmt"
 )
 
-// Type of command.
+// FrameCmd is the type of command on a frames stream.
 type FrameCmd uint8
 
 const (
+	// FrameOpen is a command to open a channel on a connection.
 	FrameOpen = FrameCmd(iota)
+	// FrameClose is a command to close a channel on a connection.
 	FrameClose
+	// FrameData is a command indicating the packet contains data.
 	FrameData
 )
 
-// Command Status
+// FrameStatus represents a command status.
 type FrameStatus uint8
 
 const (
+	// FrameSuccess is the status indicating a successful command.
 	FrameSuccess = FrameStatus(iota)
+	// FrameError is the status indicating a failed command.
 	FrameError
 )
 
@@ -28,7 +33,7 @@ const minPktLen = 6
 // when we've gone out of bounds.
 const maxWriteLen = 32768
 
-// A packet sent or received over a connection.
+// A FramePacket is a packet sent or received over a connection.
 type FramePacket struct {
 	// The command
 	Cmd FrameCmd
@@ -47,7 +52,7 @@ type FramePacket struct {
 // 1 bytes status
 // [<length> bytes of data]
 
-// Convert this packet to its network representation.
+// Bytes converts this packet to its network representation.
 func (fp FramePacket) Bytes() []byte {
 	dlen := uint16(0)
 	if fp.Data != nil {
@@ -79,7 +84,7 @@ func (f frameError) Error() string {
 	return fmt.Sprintf("status=%v, data=%s", f.Status, f.Data)
 }
 
-// Construct a packet from the given header.
+// PacketFromHeader constructs a packet from the given header.
 func PacketFromHeader(hdr []byte) FramePacket {
 	if len(hdr) < minPktLen {
 		panic("Too short")

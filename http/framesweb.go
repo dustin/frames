@@ -12,7 +12,7 @@ import (
 	"github.com/dustin/frames"
 )
 
-// A RoundTripper over frames.
+// FramesRoundTripper is a RoundTripper over frames.
 type FramesRoundTripper struct {
 	Dialer  frames.ChannelDialer
 	Timeout time.Duration
@@ -41,6 +41,7 @@ func (c *channelBodyCloser) Close() error {
 	return c.c.Close()
 }
 
+// RoundTrip satisfies http.RoundTripper
 func (f *FramesRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	if f.err != nil {
 		return nil, f.err
@@ -93,7 +94,8 @@ func (f *FramesRoundTripper) RoundTrip(req *http.Request) (*http.Response, error
 	return res, err
 }
 
-// Get an HTTP client that maintains a persistent frames connection.
+// NewFramesClient gets an HTTP client that maintains a persistent
+// frames connection.
 func NewFramesClient(n, addr string) (*http.Client, error) {
 	c, err := net.Dial(n, addr)
 	if err != nil {
@@ -112,10 +114,10 @@ func NewFramesClient(n, addr string) (*http.Client, error) {
 	return hc, nil
 }
 
-// Close the frames client.
+// CloseFramesClient closes the frames client.
 func CloseFramesClient(hc *http.Client) error {
 	if frt, ok := hc.Transport.(*FramesRoundTripper); ok {
 		return frt.Dialer.Close()
 	}
-	return errors.New("Not a frames client")
+	return errors.New("not a frames client")
 }

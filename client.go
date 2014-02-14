@@ -9,12 +9,15 @@ import (
 	"time"
 )
 
+// ChannelDialer is the client interface from which one builds
+// connections.
 type ChannelDialer interface {
 	io.Closer
 	Dial() (net.Conn, error)
 	GetInfo() Info
 }
 
+// Info provides basic state of a client.
 type Info struct {
 	BytesRead    uint64 `json:"read"`
 	BytesWritten uint64 `json:"written"`
@@ -153,7 +156,7 @@ func (fc *frameClient) writeRequests() {
 	}
 }
 
-// Convert a socket into a channel dialer.
+// NewClient converts a socket into a channel dialer.
 func NewClient(c net.Conn) ChannelDialer {
 	fc := &frameClient{
 		c,
@@ -170,42 +173,42 @@ func NewClient(c net.Conn) ChannelDialer {
 	return fc
 }
 
-func (f *frameClient) Close() error {
+func (fc *frameClient) Close() error {
 	select {
-	case <-f.closeMarker:
+	case <-fc.closeMarker:
 		return nil // already closed
 	default:
 	}
 
-	for _, fc := range f.channels {
-		fc.terminate()
+	for _, c := range fc.channels {
+		c.terminate()
 	}
 
-	close(f.closeMarker)
-	return f.c.Close()
+	close(fc.closeMarker)
+	return fc.c.Close()
 }
 
-func (f *frameClient) Dial() (net.Conn, error) {
+func (fc *frameClient) Dial() (net.Conn, error) {
 	pkt := &FramePacket{Cmd: FrameOpen}
 
 	ch := make(chan queueResult)
 
 	select {
-	case f.connqueue <- ch:
-	case <-f.closeMarker:
+	case fc.connqueue <- ch:
+	case <-fc.closeMarker:
 		return nil, errors.New("closed client")
 	}
 
 	select {
-	case f.egress <- pkt:
-	case <-f.closeMarker:
-		return nil, errors.New("Closed client")
+	case fc.egress <- pkt:
+	case <-fc.closeMarker:
+		return nil, errors.New("closed client")
 	}
 
 	select {
 	case qr := <-ch:
 		return qr.conn, qr.err
-	case <-f.closeMarker:
+	case <-fc.closeMarker:
 		return nil, io.EOF
 	}
 }
@@ -229,7 +232,7 @@ func (f *clientChannel) isClosed() bool {
 
 func (f *clientChannel) Read(b []byte) (n int, err error) {
 	if f.isClosed() {
-		return 0, errors.New("Read on closed channel")
+		return 0, errors.New("read on closed channel")
 	}
 	read := 0
 	for len(b) > 0 {
@@ -278,9 +281,9 @@ func (f *clientChannel) Write(b []byte) (n int, err error) {
 	select {
 	case f.fc.egress <- pkt:
 	case <-f.closeMarker:
-		return 0, errors.New("Write on closed channel")
+		return 0, errors.New("write on closed channel")
 	case <-f.fc.closeMarker:
-		return 0, errors.New("Write on closed connection")
+		return 0, errors.New("write on closed connection")
 	}
 	return len(b), nil
 }
@@ -329,15 +332,15 @@ func (f *clientChannel) RemoteAddr() net.Addr {
 }
 
 func (f *clientChannel) SetDeadline(t time.Time) error {
-	return errors.New("Not Implemented")
+	return errors.New("not Implemented")
 }
 
 func (f *clientChannel) SetReadDeadline(t time.Time) error {
-	return errors.New("Not Implemented")
+	return errors.New("not Implemented")
 }
 
 func (f *clientChannel) SetWriteDeadline(t time.Time) error {
-	return errors.New("Not Implemented")
+	return errors.New("not Implemented")
 }
 
 func (f *clientChannel) String() string {
