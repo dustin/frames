@@ -55,7 +55,6 @@ func (fc *frameClient) handleOpened(pkt *FramePacket) {
 	case opening = <-fc.connqueue:
 	default:
 		log.Panicf("Opening response, but nobody's opening")
-		return
 	}
 
 	if pkt.Status != FrameSuccess {
