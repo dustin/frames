@@ -80,7 +80,7 @@ func (f *frameConnection) openChannel(pkt *FramePacket) {
 		f.channels[chid] = &frameChannel{
 			conn:        f,
 			channel:     chid,
-			incoming:    make(chan []byte, 16),
+			incoming:    make(chan []byte),
 			current:     nil,
 			closeMarker: make(chan bool),
 		}
@@ -182,7 +182,7 @@ func Listen(underlying net.Conn) (net.Listener, error) {
 		c:           underlying,
 		channels:    map[uint16]*frameChannel{},
 		newConns:    make(chan newconn),
-		egress:      make(chan *FramePacket, 16),
+		egress:      make(chan *FramePacket),
 		closeMarker: make(chan bool),
 	}
 	go fc.readLoop()

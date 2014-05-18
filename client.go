@@ -70,7 +70,7 @@ func (fc *frameClient) handleOpened(pkt *FramePacket) {
 	fc.channels[pkt.Channel] = &clientChannel{
 		fc,
 		pkt.Channel,
-		make(chan []byte, 16),
+		make(chan []byte),
 		nil,
 		make(chan bool),
 	}
