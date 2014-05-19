@@ -43,6 +43,9 @@ type FramePacket struct {
 	Channel uint16
 	// Extra data for the command.
 	Data []byte
+
+	// when transmitting a packet, any error will be reported here
+	rch chan error
 }
 
 // Header:

@@ -142,6 +142,7 @@ func (fc *frameClient) writeRequests() {
 			return
 		}
 		written, err := fc.c.Write(e.Bytes())
+		e.rch <- err
 		fc.info.BytesWritten += uint64(written)
 		// Clean up on close
 		if e.Cmd == FrameClose {
@@ -188,7 +189,7 @@ func (fc *frameClient) Close() error {
 }
 
 func (fc *frameClient) Dial() (net.Conn, error) {
-	pkt := &FramePacket{Cmd: FrameOpen}
+	pkt := &FramePacket{Cmd: FrameOpen, rch: make(chan error, 1)}
 
 	ch := make(chan queueResult)
 
@@ -275,6 +276,7 @@ func (f *clientChannel) Write(b []byte) (n int, err error) {
 		Cmd:     FrameData,
 		Channel: f.channel,
 		Data:    bc,
+		rch:     make(chan error, 1),
 	}
 
 	select {
@@ -284,7 +286,7 @@ func (f *clientChannel) Write(b []byte) (n int, err error) {
 	case <-f.fc.closeMarker:
 		return 0, errors.New("write on closed connection")
 	}
-	return len(b), nil
+	return len(b), <-pkt.rch
 }
 
 func (f *clientChannel) Close() error {
@@ -296,6 +298,7 @@ func (f *clientChannel) Close() error {
 	case f.fc.egress <- &FramePacket{
 		Cmd:     FrameClose,
 		Channel: f.channel,
+		rch:     make(chan error, 1),
 	}:
 		// Send intent to close.
 	}

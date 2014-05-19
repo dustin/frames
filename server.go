@@ -74,6 +74,7 @@ func (f *frameConnection) openChannel(pkt *FramePacket) {
 		Cmd:     pkt.Cmd,
 		Status:  FrameSuccess,
 		Channel: chid,
+		rch:     make(chan error, 1),
 	}
 	nc := newconn{}
 	if err == nil {
@@ -167,6 +168,7 @@ func (f *frameConnection) writeLoop() {
 			return
 		}
 		_, err := f.c.Write(e.Bytes())
+		e.rch <- err
 		if err != nil {
 			log.Printf("Error writing to %v: %v",
 				f.c.RemoteAddr(), err)
@@ -245,6 +247,7 @@ func (f *frameChannel) Write(b []byte) (n int, err error) {
 		Cmd:     FrameData,
 		Channel: f.channel,
 		Data:    bc,
+		rch:     make(chan error, 1),
 	}
 
 	select {
@@ -252,7 +255,7 @@ func (f *frameChannel) Write(b []byte) (n int, err error) {
 	case <-f.conn.closeMarker:
 		return 0, errors.New("write on closed channel")
 	}
-	return len(b), nil
+	return len(b), <-pkt.rch
 }
 
 func (f *frameChannel) isClosed() bool {
