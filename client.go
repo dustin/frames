@@ -24,6 +24,13 @@ type Info struct {
 	ChannelsOpen int    `json:"channels"`
 }
 
+var (
+	errClosedConn    = errors.New("closed connection")
+	errClosedReadCh  = errors.New("read on closed channel")
+	errClosedWriteCh = errors.New("write on closed channel")
+	errNotImpl       = errors.New("not implemented")
+)
+
 func (i Info) String() string {
 	return fmt.Sprintf("{FrameInfo Wrote: %v, Read: %v, Open: %v}",
 		i.BytesWritten, i.BytesRead, i.ChannelsOpen)
@@ -196,13 +203,13 @@ func (fc *frameClient) Dial() (net.Conn, error) {
 	select {
 	case fc.connqueue <- ch:
 	case <-fc.closeMarker:
-		return nil, errors.New("closed client")
+		return nil, errClosedConn
 	}
 
 	select {
 	case fc.egress <- pkt:
 	case <-fc.closeMarker:
-		return nil, errors.New("closed client")
+		return nil, errClosedConn
 	}
 
 	select {
@@ -232,7 +239,7 @@ func (f *clientChannel) isClosed() bool {
 
 func (f *clientChannel) Read(b []byte) (n int, err error) {
 	if f.isClosed() {
-		return 0, errors.New("read on closed channel")
+		return 0, errClosedReadCh
 	}
 	read := 0
 	for len(b) > 0 {
@@ -282,9 +289,9 @@ func (f *clientChannel) Write(b []byte) (n int, err error) {
 	select {
 	case f.fc.egress <- pkt:
 	case <-f.closeMarker:
-		return 0, errors.New("write on closed channel")
+		return 0, errClosedWriteCh
 	case <-f.fc.closeMarker:
-		return 0, errors.New("write on closed connection")
+		return 0, errClosedConn
 	}
 	return len(b), <-pkt.rch
 }
@@ -334,15 +341,15 @@ func (f *clientChannel) RemoteAddr() net.Addr {
 }
 
 func (f *clientChannel) SetDeadline(t time.Time) error {
-	return errors.New("not Implemented")
+	return errNotImpl
 }
 
 func (f *clientChannel) SetReadDeadline(t time.Time) error {
-	return errors.New("not Implemented")
+	return errNotImpl
 }
 
 func (f *clientChannel) SetWriteDeadline(t time.Time) error {
-	return errors.New("not Implemented")
+	return errNotImpl
 }
 
 func (f *clientChannel) String() string {

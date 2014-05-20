@@ -94,7 +94,7 @@ func (f *frameConnection) openChannel(pkt *FramePacket) {
 	case f.egress <- response:
 	case <-f.closeMarker:
 		nc.c = nil
-		nc.e = errors.New("connection closed")
+		nc.e = errClosedConn
 	}
 	select {
 	case f.newConns <- nc:
@@ -202,7 +202,7 @@ type frameChannel struct {
 
 func (f *frameChannel) Read(b []byte) (n int, err error) {
 	if f.isClosed() {
-		return 0, errors.New("read on a closed channel")
+		return 0, errClosedReadCh
 	}
 	read := 0
 	for len(b) > 0 {
@@ -253,7 +253,7 @@ func (f *frameChannel) Write(b []byte) (n int, err error) {
 	select {
 	case f.conn.egress <- pkt:
 	case <-f.conn.closeMarker:
-		return 0, errors.New("write on closed channel")
+		return 0, errClosedWriteCh
 	}
 	return len(b), <-pkt.rch
 }
@@ -286,15 +286,15 @@ func (f *frameChannel) RemoteAddr() net.Addr {
 }
 
 func (f *frameChannel) SetDeadline(t time.Time) error {
-	return errors.New("not Implemented")
+	return errNotImpl
 }
 
 func (f *frameChannel) SetReadDeadline(t time.Time) error {
-	return errors.New("not Implemented")
+	return errNotImpl
 }
 
 func (f *frameChannel) SetWriteDeadline(t time.Time) error {
-	return errors.New("not Implemented")
+	return errNotImpl
 }
 
 func (f *frameChannel) String() string {
