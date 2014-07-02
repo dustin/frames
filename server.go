@@ -204,58 +204,13 @@ func (f *frameChannel) Read(b []byte) (n int, err error) {
 	if f.isClosed() {
 		return 0, errClosedReadCh
 	}
-	read := 0
-	for len(b) > 0 {
-		if f.current == nil || len(f.current) == 0 {
-			var ok bool
-			if read == 0 {
-				select {
-				case f.current, ok = <-f.incoming:
-				case <-f.closeMarker:
-				case <-f.conn.closeMarker:
-				}
-			} else {
-				select {
-				case f.current, ok = <-f.incoming:
-				case <-f.closeMarker:
-				case <-f.conn.closeMarker:
-				default:
-					return read, nil
-				}
-			}
-			if !ok {
-				return read, io.EOF
-			}
-
-		}
-		copied := copy(b, f.current)
-		read += copied
-		f.current = f.current[copied:]
-		b = b[copied:]
-	}
-	return read, nil
+	n, f.current, err = channelRead(b, f.current, f.incoming,
+		f.closeMarker, f.conn.closeMarker)
+	return n, err
 }
 
 func (f *frameChannel) Write(b []byte) (n int, err error) {
-	if len(b) > maxWriteLen {
-		b = b[0:maxWriteLen]
-	}
-
-	bc := make([]byte, len(b))
-	copy(bc, b)
-	pkt := &FramePacket{
-		Cmd:     FrameData,
-		Channel: f.channel,
-		Data:    bc,
-		rch:     make(chan error, 1),
-	}
-
-	select {
-	case f.conn.egress <- pkt:
-	case <-f.conn.closeMarker:
-		return 0, errClosedWriteCh
-	}
-	return len(b), <-pkt.rch
+	return channelWrite(b, f.channel, f.conn.egress, f.conn.closeMarker, nil)
 }
 
 func (f *frameChannel) isClosed() bool {
