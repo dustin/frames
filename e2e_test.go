@@ -71,6 +71,45 @@ func runTestServer(t *testing.T) *testService {
 	return &rv
 }
 
+func runTestEchoServer(t *testing.T) *testService {
+	t.Parallel()
+	ta, err := net.ResolveTCPAddr("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Error resolving test server addr: %v", err)
+	}
+	l, err := net.ListenTCP("tcp", ta)
+	if err != nil {
+		t.Fatalf("Error listening: %v", err)
+	}
+
+	ll, err := ListenerListener(l)
+	if err != nil {
+		t.Fatalf("Error listen listening: %v", err)
+	}
+
+	t.Logf("Listening on %v", l.Addr())
+
+	rv := testService{addr: l.Addr().String(), l: l}
+
+	workIt := func(c net.Conn) {
+		atomic.AddInt32(&rv.channels, 1)
+		io.Copy(c, c)
+	}
+
+	go func() {
+		defer ll.Close()
+		for {
+			c, err := ll.Accept()
+			if err != nil {
+				return
+			}
+			go workIt(c)
+		}
+	}()
+
+	return &rv
+}
+
 func TestEndToEnd(t *testing.T) {
 	defer time.AfterFunc(time.Second*5, func() {
 		panic("Taking too long")
@@ -181,5 +220,65 @@ func TestChannelExhaustion(t *testing.T) {
 	}
 	if pkterrs != 2 {
 		t.Fatalf("Expected two packet errors, got %v", pkterrs)
+	}
+}
+
+func TestEndToEndLargeWrites(t *testing.T) {
+	defer time.AfterFunc(time.Second*5, func() {
+		panic("Taking too long")
+	}).Stop()
+	tc := runTestEchoServer(t)
+	defer tc.l.Close()
+
+	c, err := net.Dial("tcp", tc.addr)
+	if err != nil {
+		t.Fatalf("Error connecting to my server: %v", err)
+	}
+
+	fc := NewClient(c)
+	info := fc.GetInfo()
+	expInfoStr := `{FrameInfo Wrote: 0, Read: 0, Open: 0}`
+	if info.String() != expInfoStr {
+		t.Errorf("Expected info %q, got %q", expInfoStr, info.String())
+	}
+
+	wg := sync.WaitGroup{}
+
+	worker := func(n int, fc ChannelDialer) {
+		defer wg.Done()
+
+		c, err := fc.Dial()
+		if err != nil {
+			t.Fatalf("Error dialing channel: %v", err)
+		}
+		defer c.Close()
+
+		t.Logf("Got %v", c)
+		stuff := make([]byte, maxWriteLen*2)
+
+		for i := 0; i < 5; i++ {
+			written, err := c.Write(stuff)
+			if err != nil {
+				t.Fatalf("Error writing: %v", err)
+			}
+			if written != len(stuff) {
+				t.Fatalf("Short write: %v / %v", written, len(stuff))
+			}
+			read, err := io.ReadFull(c, stuff)
+			if err != nil {
+				t.Fatalf("Error reading: %v (read %v/%v bytes)", err, read, len(stuff))
+			}
+		}
+	}
+
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go worker(i, fc)
+	}
+
+	wg.Wait()
+	err = fc.Close()
+	if err != nil {
+		t.Errorf("Expected no error closing, got %v", err)
 	}
 }

@@ -39,25 +39,45 @@ func channelRead(b []byte, current []byte, incoming chan []byte,
 func channelWrite(b []byte, channel uint16, egress chan *FramePacket,
 	close1, close2 chan bool) (int, error) {
 
-	if len(b) > maxWriteLen {
-		b = b[0:maxWriteLen]
-	}
+	written := 0
+	for len(b) > 0 {
+		todo := b
 
-	bc := make([]byte, len(b))
-	copy(bc, b)
-	pkt := &FramePacket{
-		Cmd:     FrameData,
-		Channel: channel,
-		Data:    bc,
-		rch:     make(chan error, 1),
-	}
+		if len(todo) > maxWriteLen {
+			todo = b[0:maxWriteLen]
+		}
+		b = b[len(todo):]
 
-	select {
-	case egress <- pkt:
-	case <-close1:
-		return 0, errClosedWriteCh
-	case <-close2:
-		return 0, errClosedConn
+		bc := make([]byte, len(todo))
+		copy(bc, todo)
+		pkt := &FramePacket{
+			Cmd:     FrameData,
+			Channel: channel,
+			Data:    bc,
+			rch:     make(chan error, 1),
+		}
+
+		select {
+		case egress <- pkt:
+		case <-close1:
+			return written, errClosedWriteCh
+		case <-close2:
+			return written, errClosedConn
+		}
+
+		// Flush it
+		// TODO:  do all the writes and then harvest errors asynchronously
+		select {
+		case err := <-pkt.rch:
+			if err != nil {
+				return written, err
+			}
+			written += len(todo)
+		case <-close1:
+			return written, errClosedWriteCh
+		case <-close2:
+			return written, errClosedConn
+		}
 	}
-	return len(b), <-pkt.rch
+	return written, nil
 }
