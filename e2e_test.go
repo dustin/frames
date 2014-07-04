@@ -84,6 +84,11 @@ func TestEndToEnd(t *testing.T) {
 	}
 
 	fc := NewClient(c)
+	info := fc.GetInfo()
+	expInfoStr := `{FrameInfo Wrote: 0, Read: 0, Open: 0}`
+	if info.String() != expInfoStr {
+		t.Errorf("Expected info %q, got %q", expInfoStr, info.String())
+	}
 
 	wg := sync.WaitGroup{}
 
