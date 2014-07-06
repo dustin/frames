@@ -138,7 +138,15 @@ func TestEndToEnd(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Error dialing channel: %v", err)
 		}
-		defer c.Close()
+		defer func() {
+			if err := c.Close(); err != nil {
+				t.Errorf("Error on initial close: %v", err)
+			}
+			b := []byte{0, 0, 0, 0}
+			if n, err := c.Read(b); err == nil {
+				t.Errorf("Expected error on post-close read, got %v/%x", n, b)
+			}
+		}()
 
 		t.Logf("Got %v", c)
 
