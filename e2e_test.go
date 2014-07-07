@@ -146,6 +146,9 @@ func TestEndToEnd(t *testing.T) {
 			if n, err := c.Read(b); err == nil {
 				t.Errorf("Expected error on post-close read, got %v/%x", n, b)
 			}
+			if err := c.Close(); err != nil {
+				t.Errorf("Expected no error on second close of a channel, got %v", err)
+			}
 		}()
 
 		t.Logf("Got %v", c)

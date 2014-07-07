@@ -251,6 +251,7 @@ func (f *clientChannel) Write(b []byte) (n int, err error) {
 }
 
 func (f *clientChannel) Close() error {
+	defer f.terminate()
 	select {
 	case <-f.fc.closeMarker:
 		// Socket's closed, we're done
@@ -263,7 +264,6 @@ func (f *clientChannel) Close() error {
 	}:
 		// Send intent to close.
 	}
-	f.terminate()
 	return nil
 }
 
