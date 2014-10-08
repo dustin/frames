@@ -31,6 +31,22 @@ func TestPktEncoding(t *testing.T) {
 	}
 }
 
+func TestErrorStringing(t *testing.T) {
+	e := frameError{Status: FrameError, Data: []byte("broken")}
+	got := e.Error()
+	want := `status=Error, data=broken`
+	if got != want {
+		t.Errorf("Wanted %v, got %v", want, got)
+	}
+
+	e = frameError{Status: 11, Data: []byte("broken and unknown")}
+	got = e.Error()
+	want = `status={FrameStatus 0xb}, data=broken and unknown`
+	if got != want {
+		t.Errorf("Wanted %v, got %v", want, got)
+	}
+}
+
 func benchEncoding(b *testing.B, size int) {
 	pkt := FramePacket{
 		Cmd:     FrameData,
