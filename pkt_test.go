@@ -47,6 +47,15 @@ func TestErrorStringing(t *testing.T) {
 	}
 }
 
+func TestBadFrameString(t *testing.T) {
+	c := FrameCmd(42)
+	got := c.String()
+	want := "{FrameCommand 0x2a}"
+	if want != got {
+		t.Errorf("Wanted %q, got %q", want, got)
+	}
+}
+
 func benchEncoding(b *testing.B, size int) {
 	pkt := FramePacket{
 		Cmd:     FrameData,
